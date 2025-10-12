@@ -1,116 +1,389 @@
-import React, { useMemo, useRef, useState } from "react"; import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"; import { Button } from "@/components/ui/button"; import { Input } from "@/components/ui/input"; import { Textarea } from "@/components/ui/textarea"; import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; import { Label } from "@/components/ui/label"; import { Checkbox } from "@/components/ui/checkbox"; import { Slider } from "@/components/ui/slider"; import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; import { Download, Info, RotateCcw, Sparkles } from "lucide-react"; import { Bar, BarChart, CartesianGrid, Cell, Legend, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, } from "recharts"; import jsPDF from "jspdf"; import html2canvas from "html2canvas";
+import React, { useMemo, useRef, useState } from "react";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Slider } from "@/components/ui/slider";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Download, Info, RotateCcw, Sparkles } from "lucide-react";
+import {
+    Bar,
+    BarChart,
+    CartesianGrid,
+    Cell,
+    Legend,
+    PolarAngleAxis,
+    PolarGrid,
+    PolarRadiusAxis,
+    Radar,
+    RadarChart,
+    ResponsiveContainer,
+    Tooltip as RechartsTooltip,
+    XAxis,
+    YAxis, } from "recharts";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
-// ----------------------------- // Utility types & constants // -----------------------------
+// -----------------------------
+// Utility types & constants
+// -----------------------------
 
-const LIKERT = [ { v: 1, label: "Strongly Disagree" }, { v: 2, label: "Disagree" }, { v: 3, label: "Slightly Disagree" }, { v: 4, label: "Neutral" }, { v: 5, label: "Slightly Agree" }, { v: 6, label: "Agree" }, { v: 7, label: "Strongly Agree" }, ];
+const LIKERT = [
+    { v: 1, label: "Strongly Disagree" },
+    { v: 2, label: "Disagree" },
+    { v: 3, label: "Slightly Disagree" },
+    { v: 4, label: "Neutral" },
+    { v: 5, label: "Slightly Agree" },
+    { v: 6, label: "Agree" },
+    { v: 7, label: "Strongly Agree" },
+];
 
-const OCEAN_KEYS = ["O", "C", "E", "A", "N"] as const; const OCEAN_LABELS: Record<(typeof OCEAN_KEYS)[number], string> = { O: "Openness", C: "Conscientiousness", E: "Extraversion", A: "Agreeableness", N: "Neuroticism", };
+const OCEAN_KEYS = ["O", "C", "E", "A", "N"] as const;
+const OCEAN_LABELS: Record<(typeof OCEAN_KEYS)[number], string> = {
+    O: "Openness",
+    C: "Conscientiousness",
+    E: "Extraversion",
+    A: "Agreeableness",
+    N: "Neuroticism",
+};
 
-// Eysenck PEN (Psychoticism, Extraversion, Neuroticism) const EY_KEYS = ["P", "E", "N"] as const; const EY_LABELS: Record<(typeof EY_KEYS)[number], string> = { P: "Psychoticism", E: "Extraversion", N: "Neuroticism", };
+// Eysenck PEN (Psychoticism, Extraversion, Neuroticism)
+const EY_KEYS = ["P", "E", "N"] as const;
+const EY_LABELS: Record<(typeof EY_KEYS)[number], string> = {
+    P: "Psychoticism",
+    E: "Extraversion",
+    N: "Neuroticism",
+};
 
-// 30 MegaOCEAN facets (IPIP-NEO style labels) const FACETS: Record<(typeof OCEAN_KEYS)[number], string[]> = { O: ["Imagination", "Artistic Interests", "Emotionality", "Adventurousness", "Intellect", "Liberalism"], C: ["Self‑Efficacy", "Orderliness", "Dutifulness", "Achievement‑Striving", "Self‑Discipline", "Cautiousness"], E: ["Friendliness", "Gregariousness", "Assertiveness", "Activity Level", "Excitement‑Seeking", "Cheerfulness"], A: ["Trust", "Morality", "Altruism", "Cooperation", "Modesty", "Sympathy"], N: ["Anxiety", "Anger", "Depression", "Self‑Consciousness", "Immoderation", "Vulnerability"], };
+// 30 MegaOCEAN facets (IPIP-NEO style labels)
+const FACETS: Record<(typeof OCEAN_KEYS)[number], string[]> = {
+    O: ["Imagination", "Artistic Interests", "Emotionality", "Adventurousness", "Intellect", "Liberalism"],
+    C: ["Self‑Efficacy", "Orderliness", "Dutifulness", "Achievement‑Striving", "Self‑Discipline", "Cautiousness"],
+    E: ["Friendliness", "Gregariousness", "Assertiveness", "Activity Level", "Excitement‑Seeking", "Cheerfulness"],
+    A: ["Trust", "Morality", "Altruism", "Cooperation", "Modesty", "Sympathy"],
+    N: ["Anxiety", "Anger", "Depression", "Self‑Consciousness", "Immoderation", "Vulnerability"], };
 
-// ----------------------------- // Assessment items (30 items: 6 per domain, mapped to one facet each) // reverse scoring: if reverse=true, invert 1..7 => 7..1 before normalization // -----------------------------
+// -----------------------------
+// Assessment items (30 items: 6 per domain, mapped to one facet each)
+// reverse scoring: if reverse=true, invert 1..7 => 7..1 before normalization
+// -----------------------------
 
-const ITEMS: { id: string; text: string; domain: (typeof OCEAN_KEYS)[number]; facet: string; reverse?: boolean; }[] = [ // O { id: "O1", text: "I enjoy exploring unconventional ideas and experiences.", domain: "O", facet: "Adventurousness" }, { id: "O2", text: "Art, music, or literature rarely move me emotionally.", domain: "O", facet: "Artistic Interests", reverse: true }, { id: "O3", text: "I often reflect on the deeper meaning of things.", domain: "O", facet: "Emotionality" }, { id: "O4", text: "I prefer familiar routines over novelty.", domain: "O", facet: "Imagination", reverse: true }, { id: "O5", text: "I like solving abstract or theoretical problems.", domain: "O", facet: "Intellect" }, { id: "O6", text: "I am uncomfortable challenging traditions and norms.", domain: "O", facet: "Liberalism", reverse: true }, // C { id: "C1", text: "I set clear goals and follow through on them.", domain: "C", facet: "Achievement‑Striving" }, { id: "C2", text: "My workspace is often disorganized.", domain: "C", facet: "Orderliness", reverse: true }, { id: "C3", text: "People can rely on me to keep my promises.", domain: "C", facet: "Dutifulness" }, { id: "C4", text: "I postpone tasks until the last minute.", domain: "C", facet: "Self‑Discipline", reverse: true }, { id: "C5", text: "I think carefully before acting.", domain: "C", facet: "Cautiousness" }, { id: "C6", text: "Difficult tasks make me doubt my abilities.", domain: "C", facet: "Self‑Efficacy", reverse: true }, // E { id: "E1", text: "I feel energized by being around other people.", domain: "E", facet: "Gregariousness" }, { id: "E2", text: "I tend to stay in the background during group activities.", domain: "E", facet: "Assertiveness", reverse: true }, { id: "E3", text: "I enthusiastically start new activities.", domain: "E", facet: "Activity Level" }, { id: "E4", text: "I often seek thrilling or exciting experiences.", domain: "E", facet: "Excitement‑Seeking" }, { id: "E5", text: "I frequently feel cheerful and upbeat.", domain: "E", facet: "Cheerfulness" }, { id: "E6", text: "I find it difficult to make friends.", domain: "E", facet: "Friendliness", reverse: true }, // A { id: "A1", text: "I assume most people have good intentions.", domain: "A", facet: "Trust" }, { id: "A2", text: "I will bend the rules to get ahead.", domain: "A", facet: "Morality", reverse: true }, { id: "A3", text: "I go out of my way to help others.", domain: "A", facet: "Altruism" }, { id: "A4", text: "I insist on having things my way.", domain: "A", facet: "Cooperation", reverse: true }, { id: "A5", text: "I avoid boasting or seeking the spotlight.", domain: "A", facet: "Modesty" }, { id: "A6", text: "Other people's problems don't concern me much.", domain: "A", facet: "Sympathy", reverse: true }, // N { id: "N1", text: "I often worry about things that might go wrong.", domain: "N", facet: "Anxiety" }, { id: "N2", text: "I remain calm even when under a lot of pressure.", domain: "N", facet: "Vulnerability", reverse: true }, { id: "N3", text: "I get irritated easily.", domain: "N", facet: "Anger" }, { id: "N4", text: "I rarely feel sad or down.", domain: "N", facet: "Depression", reverse: true }, { id: "N5", text: "I feel self‑conscious in social situations.", domain: "N", facet: "Self‑Consciousness" }, { id: "N6", text: "I can resist temptations and impulses well.", domain: "N", facet: "Immoderation", reverse: true }, ];
+const ITEMS: {
+    id: string;
+    text: string;
+    domain: (typeof OCEAN_KEYS)[number];
+    facet: string; reverse?: boolean;
+}[] = [
+// O
+    { id: "O1", text: "I enjoy exploring unconventional ideas and experiences.", domain: "O", facet: "Adventurousness" },
+    { id: "O2", text: "Art, music, or literature rarely move me emotionally.", domain: "O", facet: "Artistic Interests", reverse: true },
+    { id: "O3", text: "I often reflect on the deeper meaning of things.", domain: "O", facet: "Emotionality" },
+    { id: "O4", text: "I prefer familiar routines over novelty.", domain: "O", facet: "Imagination", reverse: true },
+    { id: "O5", text: "I like solving abstract or theoretical problems.", domain: "O", facet: "Intellect" },
+    { id: "O6", text: "I am uncomfortable challenging traditions and norms.", domain: "O", facet: "Liberalism", reverse: true },
+    // C
+    { id: "C1", text: "I set clear goals and follow through on them.", domain: "C", facet: "Achievement‑Striving" },
+    { id: "C2", text: "My workspace is often disorganized.", domain: "C", facet: "Orderliness", reverse: true },
+    { id: "C3", text: "People can rely on me to keep my promises.", domain: "C", facet: "Dutifulness" },
+    { id: "C4", text: "I postpone tasks until the last minute.", domain: "C", facet: "Self‑Discipline", reverse: true },
+    { id: "C5", text: "I think carefully before acting.", domain: "C", facet: "Cautiousness" },
+    { id: "C6", text: "Difficult tasks make me doubt my abilities.", domain: "C", facet: "Self‑Efficacy", reverse: true },
+    // E
+    { id: "E1", text: "I feel energized by being around other people.", domain: "E", facet: "Gregariousness" },
+    { id: "E2", text: "I tend to stay in the background during group activities.", domain: "E", facet: "Assertiveness", reverse: true },
+    { id: "E3", text: "I enthusiastically start new activities.", domain: "E", facet: "Activity Level" },
+    { id: "E4", text: "I often seek thrilling or exciting experiences.", domain: "E", facet: "Excitement‑Seeking" },
+    { id: "E5", text: "I frequently feel cheerful and upbeat.", domain: "E", facet: "Cheerfulness" },
+    { id: "E6", text: "I find it difficult to make friends.", domain: "E", facet: "Friendliness", reverse: true },
+    // A
+    { id: "A1", text: "I assume most people have good intentions.", domain: "A", facet: "Trust" },
+    { id: "A2", text: "I will bend the rules to get ahead.", domain: "A", facet: "Morality", reverse: true },
+    { id: "A3", text: "I go out of my way to help others.", domain: "A", facet: "Altruism" },
+    { id: "A4", text: "I insist on having things my way.", domain: "A", facet: "Cooperation", reverse: true },
+    { id: "A5", text: "I avoid boasting or seeking the spotlight.", domain: "A", facet: "Modesty" },
+    { id: "A6", text: "Other people's problems don't concern me much.", domain: "A", facet: "Sympathy", reverse: true },
+    // N
+    { id: "N1", text: "I often worry about things that might go wrong.", domain: "N", facet: "Anxiety" },
+    { id: "N2", text: "I remain calm even when under a lot of pressure.", domain: "N", facet: "Vulnerability", reverse: true },
+    { id: "N3", text: "I get irritated easily.", domain: "N", facet: "Anger" },
+    { id: "N4", text: "I rarely feel sad or down.", domain: "N", facet: "Depression", reverse: true },
+    { id: "N5", text: "I feel self‑conscious in social situations.", domain: "N", facet: "Self‑Consciousness" },
+    { id: "N6", text: "I can resist temptations and impulses well.", domain: "N", facet: "Immoderation", reverse: true },
+];
 
-// Optional short Eysenck items (6) const EY_ITEMS: { id: string; text: string; key: (typeof EY_KEYS)[number]; reverse?: boolean }[] = [ { id: "EY_E1", text: "I love parties and lively gatherings.", key: "E" }, { id: "EY_E2", text: "I avoid social events whenever possible.", key: "E", reverse: true }, { id: "EY_N1", text: "I often feel tense and uneasy.", key: "N" }, { id: "EY_N2", text: "I am emotionally stable and resilient.", key: "N", reverse: true }, { id: "EY_P1", text: "Rules are suggestions; I prefer doing things my own way.", key: "P" }, { id: "EY_P2", text: "I carefully consider the consequences before acting.", key: "P", reverse: true }, ];
+// Optional short Eysenck items (6)
+const EY_ITEMS: { id: string; text: string; key: (typeof EY_KEYS)[number]; reverse?: boolean }[] = [
+    { id: "EY_E1", text: "I love parties and lively gatherings.", key: "E" },
+    { id: "EY_E2", text: "I avoid social events whenever possible.", key: "E", reverse: true },
+    { id: "EY_N1", text: "I often feel tense and uneasy.", key: "N" },
+    { id: "EY_N2", text: "I am emotionally stable and resilient.", key: "N", reverse: true },
+    { id: "EY_P1", text: "Rules are suggestions; I prefer doing things my own way.", key: "P" },
+    { id: "EY_P2", text: "I carefully consider the consequences before acting.", key: "P", reverse: true },
+];
 
-// Explanations for high / low scores const EXPLAINERS: Record<(typeof OCEAN_KEYS)[number], { high: string[]; low: string[] }> = { O: { high: [ "Curious, imaginative thinker; enjoys novelty and complex ideas.", "Strong aesthetic sensitivity; adapts well to change.", "Good at cross‑disciplinary learning and creative problem‑solving.", ], low: [ "Prefers familiarity and routine; pragmatically grounded.", "Values tradition and tested methods over experimentation.", "May resist rapid change; excels in roles with clear standards.", ], }, C: { high: [ "Dependable, organized, and goal‑oriented.", "High follow‑through; strong planning and execution.", "Excels in precision work and long‑term projects.", ], low: [ "Flexible and spontaneous; comfortable with ambiguity.", "May need structure or reminders to meet deadlines.", "Thrives in creative or rapidly changing environments.", ], }, E: { high: [ "Energized by social interaction; persuasive and expressive.", "Comfortable with visibility and rapid context‑switching.", "Often sets group momentum and morale.", ], low: [ "Reflective and independent; enjoys deep work.", "Less distracted by social noise; steady focus.", "May prefer small groups or one‑to‑one settings.", ], }, A: { high: [ "Cooperative, empathic, and trustworthy.", "Builds harmony and resolves conflicts diplomatically.", "Good at service, care, and collaborative roles.", ], low: [ "Direct and competitive; prioritizes candor and efficiency.", "Comfortable with debate and tough decisions.", "May need to watch for blunt delivery.", ], }, N: { high: [ "Emotionally sensitive; vigilant to risks and signals.", "High empathy for distress; can anticipate problems early.", "May benefit from stress‑management routines.", ], low: [ "Calm under pressure; emotionally steady.", "Lower reactivity enables consistent performance.", "Good fit for high‑stakes decisions and crisis response.", ], }, };
+// Explanations for high / low scores
+const EXPLAINERS: Record<(typeof OCEAN_KEYS)[number], { high: string[]; low: string[] }> = {
+    O: {
+        high: [
+            "Curious, imaginative thinker; enjoys novelty and complex ideas.",
+            "Strong aesthetic sensitivity; adapts well to change.",
+            "Good at cross‑disciplinary learning and creative problem‑solving.",
+        ],
+        low: [
+            "Prefers familiarity and routine; pragmatically grounded.",
+            "Values tradition and tested methods over experimentation.",
+            "May resist rapid change; excels in roles with clear standards.",
+        ],
+    }, 
+    C: {
+        high: [
+            "Dependable, organized, and goal‑oriented.",
+            "High follow‑through; strong planning and execution.",
+            "Excels in precision work and long‑term projects.",
+        ],
+        low: [
+            "Flexible and spontaneous; comfortable with ambiguity.",
+            "May need structure or reminders to meet deadlines.",
+            "Thrives in creative or rapidly changing environments.",
+        ],
+    },
+    E: {
+        high: [
+            "Energized by social interaction; persuasive and expressive.",
+            "Comfortable with visibility and rapid context‑switching.",
+            "Often sets group momentum and morale.",
+        ],
+        low: [
+            "Reflective and independent; enjoys deep work.",
+            "Less distracted by social noise; steady focus.",
+            "May prefer small groups or one‑to‑one settings.",
+        ],
+    },
+    A: {
+        high: [
+            "Cooperative, empathic, and trustworthy.",
+            "Builds harmony and resolves conflicts diplomatically.",
+            "Good at service, care, and collaborative roles.",
+        ],
+        low: [
+            "Direct and competitive; prioritizes candor and efficiency.",
+            "Comfortable with debate and tough decisions.",
+            "May need to watch for blunt delivery.",
+        ],
+    },
+    N: {
+        high: [
+            "Emotionally sensitive; vigilant to risks and signals.",
+            "High empathy for distress; can anticipate problems early.",
+            "May benefit from stress‑management routines.",
+        ],
+        low: [
+            "Calm under pressure; emotionally steady.",
+            "Lower reactivity enables consistent performance.",
+            "Good fit for high‑stakes decisions and crisis response.",
+        ],
+    },
+};
 
-// ----------------------------- // Helpers // -----------------------------
+// -----------------------------
+// Helpers
+// -----------------------------
 
-function normalizeLikert(raw: number) { // map 1..7 to -3..+3 => then to -100..+100 const centered = ((raw - 4) / 3) * 100; // -100..+100 return Math.max(-100, Math.min(100, centered)); }
+function normalizeLikert(raw: number) {
+    // map 1..7 to -3..+3 => then to -100..+100
+    const centered = ((raw - 4) / 3) * 100; // -100..+100
+    return Math.max(-100, Math.min(100, centered));
+}
 
-function invertLikert(raw: number) { return 8 - raw; // 1<->7, 2<->6, 3<->5, 4 stays }
+function invertLikert(raw: number) {
+    return 8 - raw; // 1<->7, 2<->6, 3<->5, 4 stays
+}
 
-function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)); }
+function clamp(v: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, v));
+}
 
-// ----------------------------- // Main App // -----------------------------
+// -----------------------------
+// Main App
+// -----------------------------
 
-export default function App() { const [answers, setAnswers] = useState<Record<string, number>>({}); const [eyAnswers, setEyAnswers] = useState<Record<string, number>>({}); const [name, setName] = useState(""); const [notes, setNotes] = useState(""); const [advanced, setAdvanced] = useState(false); const [penWeight, setPenWeight] = useState(50); const reportRef = useRef<HTMLDivElement>(null);
+export default function App() {
+const [answers, setAnswers] = useState<Record<string, number>>({});
+const [eyAnswers, setEyAnswers] = useState<Record<string, number>>({});
+const [name, setName] = useState("");
+const [notes, setNotes] = useState("");
+const [advanced, setAdvanced] = useState(false);
+const [penWeight, setPenWeight] = useState(50);
+const reportRef = useRef<HTMLDivElement>(null);
 
-const allAnswered = ITEMS.every((i) => answers[i.id]); const allEyAnswered = EY_ITEMS.every((i) => eyAnswers[i.id]);
+const allAnswered = ITEMS.every((i) => answers[i.id]);
+    const allEyAnswered = EY_ITEMS.every((i) => eyAnswers[i.id]);
 
-const oceanScores = useMemo(() => { const acc: Record<(typeof OCEAN_KEYS)[number], number[]> = { O: [], C: [], E: [], A: [], N: [] }; for (const it of ITEMS) { const raw = answers[it.id]; if (!raw) continue; const scored = normalizeLikert(it.reverse ? invertLikert(raw) : raw); acc[it.domain].push(scored); } const result: Record<(typeof OCEAN_KEYS)[number], number> = { O: 0, C: 0, E: 0, A: 0, N: 0 }; for (const k of OCEAN_KEYS) { const vals = acc[k]; result[k] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0; } return result; }, [answers]);
+const oceanScores = useMemo(() => {
+    const acc: Record<(typeof OCEAN_KEYS)[number], number[]> = { O: [], C: [], E: [], A: [], N: [] };
+    for (const it of ITEMS) {
+        const raw = answers[it.id];
+            if (!raw) continue;
+        const scored = normalizeLikert(it.reverse ? invertLikert(raw) : raw);
+        acc[it.domain].push(scored);
+    }
+    const result: Record<(typeof OCEAN_KEYS)[number], number> = { O: 0, C: 0, E: 0, A: 0, N: 0 };
+    for (const k of OCEAN_KEYS) {
+        const vals = acc[k];
+        result[k] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+    }
+        return result;
+}, [answers]);
 
-const facetWeights = useMemo(() => { // distribute domain score across its 6 facets, nudged by matching item if answered const w: Record<string, number> = {}; for (const d of OCEAN_KEYS) { const base = oceanScores[d]; const facets = FACETS[d]; for (const f of facets) { // find item mapped to this facet const item = ITEMS.find((x) => x.domain === d && x.facet === f); let adj = base; if (item) { const raw = answers[item.id]; if (raw) adj = Math.round((base * 0.6 + normalizeLikert(item.reverse ? invertLikert(raw) : raw) * 0.4)); } w[f] = clamp(adj, -100, 100); } } return w; }, [answers, oceanScores]);
+const facetWeights = useMemo(() => {
+    // distribute domain score across its 6 facets, nudged by matching item if answered
+    const w: Record<string, number> = {};
+    for (const d of OCEAN_KEYS) {
+        const base = oceanScores[d];
+        const facets = FACETS[d];
+        for (const f of facets) {
+            // find item mapped to this facet
+            const item = ITEMS.find((x) => x.domain === d && x.facet === f);
+            let adj = base;
+            if (item) {
+                const raw = answers[item.id];
+                if (raw) adj = Math.round((base * 0.6 + normalizeLikert(item.reverse ? invertLikert(raw) : raw) * 0.4));
+            }
+            w[f] = clamp(adj, -100, 100);
+        }
+    }
+    return w;
+}, [answers, oceanScores]);
 
-const penScores = useMemo(() => { const acc: Record<(typeof EY_KEYS)[number], number[]> = { P: [], E: [], N: [] }; for (const it of EY_ITEMS) { const raw = eyAnswers[it.id]; if (!raw) continue; const scored = normalizeLikert(it.reverse ? invertLikert(raw) : raw); acc[it.key].push(scored); } const res: Record<(typeof EY_KEYS)[number], number> = { P: 0, E: 0, N: 0 }; for (const k of EY_KEYS) { const vals = acc[k]; res[k] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0; } return res; }, [eyAnswers]);
+const penScores = useMemo(() => {
+    const acc: Record<(typeof EY_KEYS)[number], number[]> = { P: [], E: [], N: [] };
+    for (const it of EY_ITEMS) {
+        const raw = eyAnswers[it.id];
+        if (!raw) continue;
+        const scored = normalizeLikert(it.reverse ? invertLikert(raw) : raw);
+        acc[it.key].push(scored);
+    }
+    const res: Record<(typeof EY_KEYS)[number], number> = { P: 0, E: 0, N: 0 };
+    for (const k of EY_KEYS) {
+        const vals = acc[k];
+        res[k] = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+    }
+    return res;
+}, [eyAnswers]);
 
-const barData = useMemo(() => { return OCEAN_KEYS.map((k) => ({ key: OCEAN_LABELS[k], score: oceanScores[k] })); }, [oceanScores]);
+const barData = useMemo(() => {
+    return OCEAN_KEYS.map((k) => ({ key: OCEAN_LABELS[k], score: oceanScores[k] }));
+}, [oceanScores]);
 
-const radarData = useMemo(() => { return EY_KEYS.map((k) => ({ axis: EY_LABELS[k], score: (penScores[k] * penWeight) / 100 })); }, [penScores, penWeight]);
+const radarData = useMemo(() => {
+    return EY_KEYS.map((k) => ({ axis: EY_LABELS[k], score: (penScores[k] * penWeight) / 100 }));
+}, [penScores, penWeight]);
 
-const tagList = useMemo(() => { const entries: { tag: string; weight: number; domain: string }[] = []; for (const d of OCEAN_KEYS) { for (const f of FACETS[d]) { entries.push({ tag: f, weight: facetWeights[f], domain: OCEAN_LABELS[d] }); } } // sort by absolute weight desc return entries.sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight)); }, [facetWeights]);
+const tagList = useMemo(() => {
+    const entries: { tag: string; weight: number; domain: string }[] = [];
+    for (const d of OCEAN_KEYS) {
+        for (const f of FACETS[d]) {
+            entries.push({ tag: f, weight: facetWeights[f], domain: OCEAN_LABELS[d] });
+        }
+    }
+    // sort by absolute weight desc
+    return entries.sort((a, b) => Math.abs(b.weight) - Math.abs(a.weight));
+}, [facetWeights]);
 
-function reset() { setAnswers({}); setEyAnswers({}); }
+function reset() {
+    setAnswers({});
+    setEyAnswers({});
+}
 
-async function downloadPDF() { if (!reportRef.current) return; const el = reportRef.current; const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" }); const imgData = canvas.toDataURL("image/png"); const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" }); const pageWidth = pdf.internal.pageSize.getWidth(); const pageHeight = pdf.internal.pageSize.getHeight();
+async function downloadPDF() {
+    if (!reportRef.current) return;
+    const el = reportRef.current;
+    const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
 
-// Fit image to width while preserving aspect
-const imgWidth = pageWidth - 64;
-const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    // Fit image to width while preserving aspect
+    const imgWidth = pageWidth - 64;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
 let y = 32;
 
-// Title
-pdf.setFontSize(18);
-pdf.text(name ? `${name} – Personality Report` : "Personality Report", 32, y);
-y += 16;
-pdf.setFontSize(11);
-pdf.text(`Generated ${new Date().toLocaleString()}`, 32, y);
-y += 16;
+    // Title
+    pdf.setFontSize(18);
+    pdf.text(name ? `${name} – Personality Report` : "Personality Report", 32, y);
+    y += 16;
+    pdf.setFontSize(11);
+    pdf.text(`Generated ${new Date().toLocaleString()}`, 32, y);
+    y += 16;
 
-// Add the big snapshot
-pdf.addImage(imgData, "PNG", 32, y, imgWidth, imgHeight);
-y += imgHeight + 24;
+    // Add the big snapshot
+    pdf.addImage(imgData, "PNG", 32, y, imgWidth, imgHeight);
+    y += imgHeight + 24;
 
-// Add notes (optional)
-if (notes) {
-  pdf.setFontSize(12);
-  pdf.text("Notes", 32, y);
-  y += 16;
-  const lines = pdf.splitTextToSize(notes, pageWidth - 64);
-  pdf.text(lines, 32, y);
+    // Add notes (optional)
+    if (notes) {
+        pdf.setFontSize(12);
+        pdf.text("Notes", 32, y);
+        y += 16;
+        const lines = pdf.splitTextToSize(notes, pageWidth - 64);
+        pdf.text(lines, 32, y);
+    }
+
+    pdf.save((name ? name.replaceAll(/[^a-z0-9]+/gi, "_") + "_" : "") + "Personality_Report.pdf");
+
 }
 
-pdf.save((name ? name.replaceAll(/[^a-z0-9]+/gi, "_") + "_" : "") + "Personality_Report.pdf");
+return (
+    <TooltipProvider>
+        <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900">
+            <div className="mx-auto max-w-6xl px-4 py-6">
+            <header className="mb-6 flex items-center justify-between">
+                <div>
+                    <h1 className="text-3xl font-extrabold tracking-tight">PersonaLab</h1>
+                    <p className="text-sm text-slate-600">OCEAN + Eysenck Analyzer • Downloadable Detailed Report</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Button onClick={reset} variant="secondary" className="gap-2"><RotateCcw size={16}/> Reset</Button>
+                    <Button onClick={downloadPDF} className="gap-2"><Download size={16}/> Download Report</Button>
+                </div>
+            </header>
 
-}
+            <Tabs defaultValue="assessment">
+                <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="assessment">Assessment</TabsTrigger>
+                    <TabsTrigger value="results">Results</TabsTrigger>
+                    <TabsTrigger value="report">Report Preview</TabsTrigger>
+                </TabsList>
 
-return ( <TooltipProvider> <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900"> <div className="mx-auto max-w-6xl px-4 py-6"> <header className="mb-6 flex items-center justify-between"> <div> <h1 className="text-3xl font-extrabold tracking-tight">PersonaLab</h1> <p className="text-sm text-slate-600">OCEAN + Eysenck Analyzer • Downloadable Detailed Report</p> </div> <div className="flex items-center gap-2"> <Button onClick={reset} variant="secondary" className="gap-2"><RotateCcw size={16}/> Reset</Button> <Button onClick={downloadPDF} className="gap-2"><Download size={16}/> Download Report</Button> </div> </header>
+                <TabsContent value="assessment" className="mt-4 space-y-6">
+                    <Card>
+                        <CardHeader>
+                             <CardTitle>Profile</CardTitle>
+                        <CardDescription>Optionally add your name and notes — they'll appear in the PDF.</CardDescription>
+                        </CardHeader>
+                    <CardContent className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <Label htmlFor="name">Name</Label>
+                        <Input id="name" placeholder="e.g., Alex Rivera" value={name} onChange={(e) => setName(e.target.value)} />
+                    </div>
+                    <div className="sm:col-span-2">
+                        <Label htmlFor="notes">Notes (goals, context, observations)</Label>
+                        <Textarea id="notes" rows={3} placeholder="Anything you'd like to remember with this report." value={notes} onChange={(e) => setNotes(e.target.value)} />
+                    </div>
+                </CardContent>
+            </Card>
 
-<Tabs defaultValue="assessment">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="assessment">Assessment</TabsTrigger>
-          <TabsTrigger value="results">Results</TabsTrigger>
-          <TabsTrigger value="report">Report Preview</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="assessment" className="mt-4 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Profile</CardTitle>
-              <CardDescription>Optionally add your name and notes — they'll appear in the PDF.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="name">Name</Label>
-                <Input id="name" placeholder="e.g., Alex Rivera" value={name} onChange={(e) => setName(e.target.value)} />
-              </div>
-              <div className="sm:col-span-2">
-                <Label htmlFor="notes">Notes (goals, context, observations)</Label>
-                <Textarea id="notes" rows={3} placeholder="Anything you'd like to remember with this report." value={notes} onChange={(e) => setNotes(e.target.value)} />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Big Five (OCEAN) – 30 items</CardTitle>
-              <CardDescription>Rate how accurately each statement describes you. Use the full scale if possible.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            <Card>
+                <CardHeader>
+                    <CardTitle>Big Five (OCEAN) – 30 items</CardTitle>
+                   <Card
+Description>Rate how accurately each statement describes you. Use the full scale if possible.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {ITEMS.map((it) => (
                   <div key={it.id} className="rounded-2xl border bg-white p-4 shadow-sm">
@@ -443,7 +716,7 @@ return ( <TooltipProvider> <div className="min-h-screen bg-gradient-to-b from-sl
       <footer className="py-10 text-center text-xs text-slate-500">© {new Date().getFullYear()} PersonaLab</footer>
     </div>
   </div>
-</TooltipProvider>
-
-); }
+        </TooltipProvider>
+    );
+}
 
