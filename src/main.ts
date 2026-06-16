@@ -1,60 +1,71 @@
-import './style.css'
-import typescriptLogo from './assets/typescript.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import { setupCounter } from './counter.ts'
+const COLS = 80;
+const ROWS = 27;
+const FONT_SIZE = 14;
+const FONT_FAMILY = 'Courier New, Courier, monospace';
+const HEADER_TEXT = 'MY ' + COLS + 'X' + ROWS + ' TERMINAL CANVAS TEXT GRID';
 
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-<section id="center">
-  <div class="hero">
-    <img src="${heroImg}" class="base" width="170" height="179">
-    <img src="${typescriptLogo}" class="framework" alt="TypeScript logo"/>
-    <img src="${viteLogo}" class="vite" alt="Vite logo" />
-  </div>
-  <div>
-    <h1>Get started</h1>
-    <p>Edit <code>src/main.ts</code> and save to test <code>HMR</code></p>
-  </div>
-  <button id="counter" type="button" class="counter"></button>
-</section>
+/*
 
-<div class="ticks"></div>
+ */
 
-<section id="next-steps">
-  <div id="docs">
-    <svg class="icon" role="presentation" aria-hidden="true"><use href="/icons.svg#documentation-icon"></use></svg>
-    <h2>Documentation</h2>
-    <p>Your questions, answered</p>
-    <ul>
-      <li>
-        <a href="https://vite.dev/" target="_blank">
-          <img class="logo" src="${viteLogo}" alt="" />
-          Explore Vite
-        </a>
-      </li>
-      <li>
-        <a href="https://www.typescriptlang.org" target="_blank">
-          <img class="button-icon" src="${typescriptLogo}" alt="">
-          Learn more
-        </a>
-      </li>
-    </ul>
-  </div>
-  <div id="social">
-    <svg class="icon" role="presentation" aria-hidden="true"><use href="/icons.svg#social-icon"></use></svg>
-    <h2>Connect with us</h2>
-    <p>Join the Vite community</p>
-    <ul>
-      <li><a href="https://github.com/vitejs/vite" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#github-icon"></use></svg>GitHub</a></li>
-      <li><a href="https://chat.vite.dev/" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#discord-icon"></use></svg>Discord</a></li>
-      <li><a href="https://x.com/vite_js" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#x-icon"></use></svg>X.com</a></li>
-      <li><a href="https://bsky.app/profile/vite.dev" target="_blank"><svg class="button-icon" role="presentation" aria-hidden="true"><use href="/icons.svg#bluesky-icon"></use></svg>Bluesky</a></li>
-    </ul>
-  </div>
-</section>
 
-<div class="ticks"></div>
-<section id="spacer"></section>
-`
+const canvas = document.createElement('canvas');
+document.body.appendChild(canvas);
+const ctx = canvas.getContext('2d')!;
 
-setupCounter(document.querySelector<HTMLButtonElement>('#counter')!)
+const screenBuffer: string[][] = Array.from({ length: ROWS }, () =>
+    Array(COLS).fill(' ')
+);
+
+ctx.font = `${FONT_SIZE}px ${FONT_FAMILY}`;
+const charWidth = Math.ceil(ctx.measureText('M').width);
+const charHeight = Math.ceil(FONT_SIZE * 1.2);
+
+canvas.width = COLS * charWidth;
+canvas.height = ROWS * charHeight;
+
+function renderScreen() {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Render text grid
+    ctx.fillStyle = '#00ff00';
+    ctx.font = `${FONT_SIZE}px ${FONT_FAMILY}`;
+    ctx.textBaseline = 'top';
+
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            const char = screenBuffer[r][c];
+            if (char !== ' ') {
+                const x = c * charWidth;
+                const y = r * charHeight;
+                ctx.fillText(char, x, y);
+            }
+        }
+    }
+}
+
+function writeAt(text: string, col: number, row: number) {
+    for (let i = 0; i < text.length; i++) {
+        const targetCol = col + i;
+        if (targetCol < COLS && row < ROWS) {
+            screenBuffer[row][targetCol] = text[i];
+        }
+    }
+    renderScreen();
+}
+
+writeAt(HEADER_TEXT, Math.round((COLS - HEADER_TEXT.length) / 2), 0);
+writeAt("Line 2: System initialized...", 0, 1);
+writeAt(">", 0, ROWS - 1);
+
+let cursorCol = 1;
+window.addEventListener('keydown', (e) => {
+    if (e.key.length === 1 && cursorCol < COLS) {
+        writeAt(e.key, cursorCol, ROWS - 1);
+        cursorCol++;
+    } else if (e.key === 'Backspace' && cursorCol > 1) {
+        cursorCol--;
+        writeAt(' ', cursorCol, ROWS - 1);
+    }
+});
