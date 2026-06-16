@@ -1,5 +1,3 @@
-// @ts-ignore
-// @ts-ignore
 /**
  * A text-based instruction used to communicate directly with my portfolio.
  *
@@ -30,8 +28,8 @@
  *     <li>sudo (Superuser Do): Runs a command with administrative security privileges.</li>
  * </ul>
  */
-interface Command {
-    name: string;
-    description: string;
-    execute(command: Command): void;
-}
+//interface Command {
+//  name: string;
+//  description: string;
+//  execute(command: Command): void;
+//}
